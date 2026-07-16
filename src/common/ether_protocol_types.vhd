@@ -7,10 +7,16 @@ use ieee.numeric_std.all;
 package eth_types_pkg is
     subtype byte_t is std_logic_vector(7 downto 0);
     subtype word16_t is std_logic_vector(15 downto 0);
+    subtype word32_t is std_logic_vector(31 downto 0);
+    subtype word64_t is std_logic_vector(63 downto 0);
+    subtype keep4_t is std_logic_vector(3 downto 0);
+    subtype keep8_t is std_logic_vector(7 downto 0);
     subtype mac_addr_t is std_logic_vector(47 downto 0);
     subtype ipv4_addr_t is std_logic_vector(31 downto 0);
 
     function sel_byte(data : std_logic_vector; byte_index : natural) return byte_t;
+    function lane_byte32(data : word32_t; byte_index : natural) return byte_t;
+    function lane_byte(data : word64_t; byte_index : natural) return byte_t;
     function crc32_next(crc : std_logic_vector(31 downto 0); data : byte_t) return std_logic_vector;
     function ipv4_header_checksum(
         total_length   : word16_t;
@@ -28,6 +34,18 @@ package body eth_types_pkg is
         variable hi : integer := data'left - integer(byte_index * 8);
     begin
         return data(hi downto hi - 7);
+    end function;
+
+    function lane_byte32(data : word32_t; byte_index : natural) return byte_t is
+        variable lo : integer := integer(byte_index * 8);
+    begin
+        return data(lo + 7 downto lo);
+    end function;
+
+    function lane_byte(data : word64_t; byte_index : natural) return byte_t is
+        variable lo : integer := integer(byte_index * 8);
+    begin
+        return data(lo + 7 downto lo);
     end function;
 
     function crc32_next(crc : std_logic_vector(31 downto 0); data : byte_t) return std_logic_vector is
