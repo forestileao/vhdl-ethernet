@@ -1,0 +1,6 @@
+build/
+*.cf
+transcript
+vsim.wlf
+__pycache__/
+.local/

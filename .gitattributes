@@ -1,0 +1,4 @@
+*.vhd text eol=lf
+*.py text eol=lf
+*.md text eol=lf
+Makefile text eol=lf
