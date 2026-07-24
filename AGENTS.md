@@ -105,3 +105,71 @@ introduce guidance or code that contradicts the README, Makefile, scripts, or
 - Add a self-checking bench under `tests/` that drives the block and asserts
   expected results, then register it in `TESTS`. Model new benches on existing
   ones (for example `tb_fcs`, `tb_arp`, `tb_ipv4_udp`).
+
+## Writing a self-checking testbench
+
+Benches are pure VHDL and must decide pass/fail on their own; there are no
+golden logs or waveform diffs. The runner only checks the exit status, so a
+bench that never asserts anything is a false pass. Follow the structure used by
+`tb_fcs`, `tb_arp`, and `tb_ipv4_udp`:
+
+- Entity is empty (`entity tb_x is end entity;`); everything lives in the
+  architecture. Start the file with the SPDX comment and
+  `library std; use std.env.all;` so `finish` and `stop` are visible.
+- Generate a free-running clock, for example `clk <= not clk after 5 ns;`
+  (a 100 MHz, 10 ns period), and assert reset for a few cycles before driving
+  stimulus (`wait for 40 ns; rst <= '0';`).
+- Drive inputs synchronously from a `stimulus` process using
+  `wait until rising_edge(clk);`. Honor back-pressure: only advance a
+  `tvalid`/`tready` beat when `tready = '1'`. Reuse the `send_frame` helper
+  pattern for byte streams.
+- Check outputs in a separate `scoreboard` process clocked on `rising_edge(clk)`
+  that compares each accepted beat (`tvalid = '1' and tready = '1'`) against the
+  expected bytes, verifies `tlast` lands on the final byte, and confirms error
+  flags such as `tuser`, `bad_frame`, and `bad_fcs` behave as intended.
+- Report failures with `assert <cond> report "..." severity failure;`. GHDL runs
+  with `--assert-level=error`, so a `failure` (or `error`) assertion stops the
+  simulation with a non-zero exit and fails the target.
+- End the run deterministically: signal completion with a `done` flag, guard it
+  with a bounded loop so a hang becomes a real failure
+  (`assert done report "... timed out" severity failure;`), then call `finish;`
+  so the simulator returns cleanly instead of running forever.
+- Prefer constants and helper procedures for stimulus vectors so the intent of
+  each frame is readable and easy to extend.
+
+## Verify after every change (required)
+
+Run these from the repo root before committing, whether you added a block,
+edited RTL, or touched a bench. Skipping the final full run is the most common
+way a change regresses another block.
+
+1. Register first. If you added or renamed a `.vhd`, update `SOURCES` and/or
+   `TESTS` in `scripts/vhdl_cli.py`, then confirm it appears in `make list`.
+   Unregistered files never compile and never run.
+2. Lint. `make lint` (stdlib Python only; enforces SPDX, encoding, whitespace,
+   final newline, and byte-compiles every `.py`).
+3. Iterate on the focused bench while developing:
+
+   ```sh
+   make docker-test TB="tb_your_block"       # repeatable GHDL path
+   make test-modelsim TB="tb_your_block"     # this machine has ModelSim, not GHDL
+   ```
+
+   Because `SOURCES` compiles bottom-up, a change low in the stack can break a
+   dependent block even when your focused bench passes.
+4. Final gate: run the whole suite with no `TB` filter so every dependent bench
+   recompiles against your change.
+
+   ```sh
+   make verify                 # lint + full suite via auto-selected simulator
+   make docker-test            # full suite, most repeatable GHDL result
+   ```
+
+   `make verify` runs `lint` then `test`; treat a green full-suite run (not just
+   the focused bench) as the definition of done. A non-zero exit means a bench
+   assertion tripped or a source failed to compile: read the `+ ghdl ...` or
+   `+ vcom ...` line printed just before the failure to find the offending file
+   or testbench.
+5. Keep VHDL-2008 (`VHDL_STD=08`, the default) green. `VHDL_STD=19` is optional
+   and only works on toolchains shipping the VHDL-2019 IEEE libraries, so do not
+   let a 2019-only construct break the 2008 baseline.
