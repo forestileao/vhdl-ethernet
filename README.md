@@ -152,3 +152,7 @@ choice.
 ## License
 
 This project is licensed under the MIT License.  See [LICENSE](LICENSE).
+
+## Workspace
+
+This repository lives in a shared workspace with the microprocessor project: https://github.com/forestileao/arq-comp-microprocessor.
